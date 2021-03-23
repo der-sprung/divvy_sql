@@ -1,0 +1,286 @@
+--Q1 How many trips in each month of each year?
+
+SELECT DATE_TRUNC('month', start_time) AS start_month, COUNT(trip_id) AS num_trips
+FROM divvybikes_2016 
+WHERE user_type = 'Customer'
+GROUP BY start_month
+UNION ALL
+SELECT DATE_TRUNC('month', start_time) AS start_month, COUNT(trip_id) AS num_trips
+FROM divvybikes_2017 
+WHERE user_type = 'Customer'
+GROUP BY start_month
+UNION ALL
+SELECT DATE_TRUNC('month', start_time) AS start_month, COUNT(trip_id) AS num_trips
+FROM divvybikes_2018 
+WHERE user_type = 'Customer'
+GROUP BY start_month
+UNION ALL
+SELECT DATE_TRUNC('month', start_time) AS start_month, COUNT(trip_id) AS num_trips
+FROM divvybikes_2019
+WHERE user_type = 'Customer'
+GROUP BY start_month-
+
+-Q2 Growth BUT FILTERED BY user_type='Customer' for START STATIONS
+
+
+WITH
+trip_data AS (SELECT trip_year, start_station_id, num_trips, LAG(num_trips, 3) OVER(PARTITION BY start_station_id ORDER BY trip_year) AS lag_trips
+	FROM(SELECT DATE_TRUNC('year',start_time) AS trip_year, start_station_id, COUNT(start_station_id) as num_trips
+	FROM divvybikes_2016
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year, start_station_id
+	UNION
+	SELECT DATE_TRUNC('year',start_time) AS trip_year, start_station_id, COUNT(start_station_id) as num_trips
+	FROM divvybikes_2017
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year, start_station_id
+	UNION
+	SELECT DATE_TRUNC('year',start_time) AS trip_year, start_station_id, COUNT(start_station_id) as num_trips
+	FROM divvybikes_2018
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year, start_station_id
+	UNION
+	SELECT DATE_TRUNC('year',start_time) AS trip_year, start_station_id, COUNT(start_station_id) as num_trips
+	FROM divvybikes_2019
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year, start_station_id) AS temp),
+station_data AS (SELECT id, name FROM divvy_stations)
+
+SELECT trip_year, name, num_trips, lag_trips
+FROM trip_data
+LEFT JOIN station_data ON trip_data.start_station_id = station_data.id;
+
+--Q2 Filtered for END STATIONS
+
+WITH
+trip_data AS (SELECT trip_year, end_station_id, num_trips, LAG(num_trips, 3) OVER(PARTITION BY end_station_id ORDER BY trip_year) AS lag_trips
+	FROM(SELECT DATE_TRUNC('year',start_time) AS trip_year, end_station_id, COUNT(end_station_id) as num_trips
+	FROM divvybikes_2016
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year, end_station_id
+	UNION
+	SELECT DATE_TRUNC('year',end_time) AS trip_year, end_station_id, COUNT(end_station_id) as num_trips
+	FROM divvybikes_2017
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year, end_station_id
+	UNION
+	SELECT DATE_TRUNC('year',end_time) AS trip_year, end_station_id, COUNT(end_station_id) as num_trips
+	FROM divvybikes_2018
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year, end_station_id
+	UNION
+	SELECT DATE_TRUNC('year',end_time) AS trip_year, end_station_id, COUNT(end_station_id) as num_trips
+	FROM divvybikes_2019
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year, end_station_id) AS temp),
+station_data AS (SELECT id, name FROM divvy_stations)
+
+SELECT trip_year, name, num_trips, lag_trips
+FROM trip_data
+LEFT JOIN station_data ON trip_data.end_station_id = station_data.id;
+
+--Q2 Geodata Upload
+
+WITH
+station_list AS (SELECT name, id, longitude, latitude FROM divvy_stations),
+trip_list AS (SELECT DATE_TRUNC('year', start_time) AS trip_year, start_station_id
+			 FROM divvybikes_2016 WHERE user_type = 'Customer' UNION ALL
+			 SELECT DATE_TRUNC('year', start_time) AS trip_year, start_station_id
+			 FROM divvybikes_2019 WHERE user_type = 'Customer')
+			 
+SELECT trip_year, name, id, longitude, latitude, COUNT(start_station_id) AS num_stations
+FROM station_list
+JOIN trip_list ON station_list.id = trip_list.start_station_id
+GROUP BY trip_year, name, id, longitude, latitude
+ORDER BY name, trip_year ASC;
+
+--Q3 monthly truncated trip count
+
+
+SELECT trip_year, num_trips
+	FROM(SELECT DATE_TRUNC('month',start_time) AS trip_year, COUNT(trip_id) as num_trips
+	FROM divvybikes_2016
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year
+	UNION
+	SELECT DATE_TRUNC('month',start_time) AS trip_year, COUNT(trip_id) as num_trips
+	FROM divvybikes_2017
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year
+	UNION
+	SELECT DATE_TRUNC('month',start_time) AS trip_year, COUNT(trip_id) as num_trips
+	FROM divvybikes_2018
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year
+	UNION
+	SELECT DATE_TRUNC('month',start_time) AS trip_year, COUNT(trip_id) as num_trips
+	FROM divvybikes_2019
+	WHERE user_type = 'Customer'
+	GROUP BY trip_year) AS temp
+ORDER BY trip_year DESC;
+
+--Q4 --Filtered for 1 answer
+
+WITH
+trip_combo (start_station_id, end_station_id, start_name, end_name, distance) AS (SELECT dsa.id AS start_station_id,
+											 dsb.id AS end_station_id,
+											 dsa.name AS start_name,
+											 dsb.name AS end_name,
+											 calculate_distance(dsa.latitude, dsa.longitude, dsb.latitude, dsb.longitude, 'K') AS distance
+											 FROM divvy_stations dsa CROSS JOIN divvy_stations dsb
+										   	 ORDER BY distance DESC
+										   	 LIMIT 1000),
+all_trips AS (SELECT trip_id, start_station_id, end_station_id
+			 FROM divvybikes_2016
+			 WHERE user_type='Customer'
+			 UNION ALL
+			 SELECT trip_id, start_station_id, end_station_id
+			 FROM divvybikes_2017
+			 WHERE user_type='Customer'
+			 UNION ALL
+			 SELECT trip_id, start_station_id, end_station_id
+			 FROM divvybikes_2018
+			 WHERE user_type='Customer'
+			 UNION ALL
+			 SELECT trip_id, start_station_id, end_station_id
+			 FROM divvybikes_2019
+			 WHERE user_type='Customer')
+SELECT trip_id, start_name, end_name, distance
+FROM trip_combo tco
+RIGHT JOIN all_trips alt USING(start_station_id)
+WHERE tco.start_station_id = alt.start_station_id AND tco.end_station_id = alt.end_station_id AND distance IS NOT NULL
+ORDER BY distance DESC
+LIMIT 100;
+
+--Q4 -- All trips > 20kms
+
+
+WITH
+trip_combo (start_station_id, end_station_id, start_name, end_name, distance) AS (SELECT dsa.id AS start_station_id,
+											 dsb.id AS end_station_id,
+											 dsa.name AS start_name,
+											 dsb.name AS end_name,
+											 calculate_distance(dsa.latitude, dsa.longitude, dsb.latitude, dsb.longitude, 'K') AS distance
+											 FROM divvy_stations dsa CROSS JOIN divvy_stations dsb
+										   	 ORDER BY distance DESC),
+all_trips AS (SELECT trip_id, start_time, end_time, birthyear, start_station_id, end_station_id
+			 FROM divvybikes_2016
+			 WHERE user_type='Customer'
+			 UNION ALL
+			 SELECT trip_id, start_time, end_time, birthyear, start_station_id, end_station_id
+			 FROM divvybikes_2017
+			 WHERE user_type='Customer'
+			 UNION ALL
+			 SELECT trip_id, start_time, end_time, birthyear, start_station_id, end_station_id
+			 FROM divvybikes_2018
+			 WHERE user_type='Customer'
+			 UNION ALL
+			 SELECT trip_id, start_time, end_time, birthyear, start_station_id, end_station_id
+			 FROM divvybikes_2019
+			 WHERE user_type='Customer')
+SELECT trip_id, start_time, end_time, birthyear, start_name, end_name, distance
+FROM trip_combo tco
+RIGHT JOIN all_trips alt USING(start_station_id)
+WHERE tco.start_station_id = alt.start_station_id AND tco.end_station_id = alt.end_station_id AND distance > 20
+ORDER BY distance DESC;
+
+--Q5 How often do bikes need to be relocated?
+
+SELECT trip_id, bikeid, start_time, end_time, start_station_id, end_station_id, user_type
+FROM (SELECT *, LAG(end_station_id, 1) OVER(PARTITION BY bikeid ORDER BY start_time ASC) AS lag_station
+FROM divvybikes_2016
+UNION ALL
+SELECT *, LAG(end_station_id, 1) OVER(PARTITION BY bikeid ORDER BY start_time ASC) AS lag_station
+FROM divvybikes_2017
+UNION ALL
+SELECT *, LAG(end_station_id, 1) OVER(PARTITION BY bikeid ORDER BY start_time ASC) AS lag_station
+FROM divvybikes_2018
+UNION ALL
+SELECT *, LAG(end_station_id, 1) OVER(PARTITION BY bikeid ORDER BY start_time ASC) AS lag_station
+FROM divvybikes_2019) AS temp
+WHERE lag_station != start_station_id;
+
+--Q6 - Count of journeys with distance recorded
+
+WITH
+trip_combo (start_station_id, end_station_id, start_name, end_name, journey, distance) AS (SELECT dsa.id AS start_station_id,
+											 dsb.id AS end_station_id,
+											 dsa.name AS start_name,
+											 dsb.name AS end_name,
+											 CONCAT(dsa.name, ' - ', dsb.name) AS journey,
+											 calculate_distance(dsa.latitude, dsa.longitude, dsb.latitude, dsb.longitude, 'K') AS distance
+											 FROM divvy_stations dsa CROSS JOIN divvy_stations dsb
+										   	 ORDER BY distance DESC),
+all_trips AS (SELECT trip_id, start_station_id, end_station_id
+			 FROM divvybikes_2016
+			 WHERE user_type='Customer'
+			 UNION ALL
+			 SELECT trip_id, start_station_id, end_station_id
+			 FROM divvybikes_2017
+			 WHERE user_type='Customer'
+			 UNION ALL
+			 SELECT trip_id, start_station_id, end_station_id
+			 FROM divvybikes_2018
+			 WHERE user_type='Customer'
+			 UNION ALL
+			 SELECT trip_id, start_station_id, end_station_id
+			 FROM divvybikes_2019
+			 WHERE user_type='Customer')
+SELECT start_name, end_name, distance, journey, COUNT(journey) as num_trips
+FROM trip_combo tco
+RIGHT JOIN all_trips alt USING(start_station_id)
+WHERE tco.start_station_id = alt.start_station_id AND tco.end_station_id = alt.end_station_id AND distance IS NOT NULL AND distance != 0
+GROUP BY start_name, end_name, distance, journey
+ORDER BY distance ASC;
+
+--BONUS Q
+
+
+WITH 
+all_relocations AS (SELECT DATE_TRUNC('year',start_time) AS start_year, end_station_id, COUNT(lag_station) AS num_relocations
+					FROM (SELECT *, LAG(end_station_id, 1) OVER(PARTITION BY bikeid ORDER BY start_time ASC) AS lag_station
+						FROM divvybikes_2016
+						UNION ALL
+						SELECT *, LAG(end_station_id, 1) OVER(PARTITION BY bikeid ORDER BY start_time ASC) AS lag_station
+						FROM divvybikes_2017
+						UNION ALL
+						SELECT *, LAG(end_station_id, 1) OVER(PARTITION BY bikeid ORDER BY start_time ASC) AS lag_station
+						FROM divvybikes_2018
+						UNION ALL
+						SELECT *, LAG(end_station_id, 1) OVER(PARTITION BY bikeid ORDER BY start_time ASC) AS lag_station
+						FROM divvybikes_2019) AS temp
+					WHERE lag_station != start_station_id
+				   GROUP BY end_station_id, start_year),
+end_trips AS (SELECT DATE_TRUNC('year',start_time) AS start_year, COUNT(end_station_id) AS num_end, end_station_id, user_type
+				FROM divvybikes_2016 
+				GROUP BY start_year, end_station_id, user_type UNION ALL
+				SELECT DATE_TRUNC('year',start_time) AS start_year, COUNT(end_station_id) AS num_end, end_station_id, user_type
+				FROM divvybikes_2017
+				GROUP BY start_year, end_station_id, user_type UNION ALL
+				SELECT DATE_TRUNC('year',start_time) AS start_year, COUNT(end_station_id) AS num_end, end_station_id, user_type
+				FROM divvybikes_2018
+				GROUP BY start_year, end_station_id, user_type UNION ALL
+				SELECT DATE_TRUNC('year',start_time) AS start_year, COUNT(end_station_id) AS num_end, end_station_id, user_type
+				FROM divvybikes_2019
+				GROUP BY start_year, end_station_id, user_type),
+start_trips AS (SELECT DATE_TRUNC('year',start_time) AS st_year, COUNT(start_station_id) AS num_start, start_station_id, user_type
+				FROM divvybikes_2016 
+				GROUP BY st_year, start_station_id, user_type UNION ALL
+				SELECT DATE_TRUNC('year',start_time) AS st_year, COUNT(start_station_id) AS num_start, start_station_id, user_type
+				FROM divvybikes_2017
+				GROUP BY st_year, start_station_id, user_type UNION ALL
+				SELECT DATE_TRUNC('year',start_time) AS st_year, COUNT(start_station_id) AS num_start, start_station_id, user_type
+				FROM divvybikes_2018
+				GROUP BY st_year, start_station_id, user_type UNION ALL
+				SELECT DATE_TRUNC('year',start_time) AS st_year, COUNT(start_station_id) AS num_start, start_station_id, user_type
+				FROM divvybikes_2019
+				GROUP BY st_year, start_station_id, user_type),
+all_stations AS (SELECT * FROM divvy_stations)
+
+SELECT st_year, name, docks, num_start, num_end, num_relocations, longitude, latitude
+FROM start_trips st
+LEFT JOIN end_trips et ON st_year = et.start_year
+LEFT JOIN all_relocations ar ON st_year = ar.start_year
+LEFT JOIN all_stations ON ar.end_station_id = all_stations.id
+WHERE st.user_type != 'Customer'
+ORDER BY name, st_year DESC;
